@@ -24,8 +24,24 @@ SQUID_BIN=$(PREFIX)/bin/squidclient
 #
 GDB_DIR=gdb-7.4
 GDB_CFG_OPTS=--target=$(HOST) --build=$(BUILD) --with-curses
+GDB_BIN=$(PREFIX)/bin/gdb
 
-all:$(SQUID_BIN) #$(GDB_DIR)/gdb.built
+#
+# tcpdump
+#
+TCPDUMP_MAKE_PREFIX=CC=`which mipsel-linux-gcc`
+LIBPCAP_SRC=libpcap-1.3.0.tar.gz
+TCPDUMP_SRC=tcpdump-4.3.0.tar.gz
+LIBPCAP_URL=http://www.tcpdump.org/release/$(LIBPCAP_SRC)
+TCPDUMP_URL=http://www.tcpdump.org/release/$(TCPDUMP_SRC)
+LIBPCAP_DIR=$(subst .tar.gz,,$(LIBPCAP_SRC))
+TCPDUMP_DIR=$(subst .tar.gz,,$(TCPDUMP_SRC))
+LIBPCAP_CFG_OPTS=--with-pcap=linux
+TCPDUMP_CFG_OPTS=$(LIBPCAP_CFG_OPTS) ac_cv_linux_vers=2
+TCPDUMP_BIN=$(PREFIX)/sbin/tcpdump
+
+
+all:$(SQUID_BIN) $(TCPDUMP_BIN) #$(GDB_BIN)
 	@echo "Everything up to date!"
 
 ######################################
@@ -53,14 +69,45 @@ $(SQUID_BIN): $(SQUID_DIR)/config.cache
 #
 # GDB
 #
-$(GDB_DIR)/gdb.built: $(GDB_DIR)/config.cache
-	cd $(GDB_DIR) && \
-	$(MAKE) && \
-	$(MAKE) install && \
-	touch gdb.built
+$(GDB_DIR)/gdb: $(GDB_DIR)/config.cache
+	$(MAKE) -C $(GDB_DIR)
+
+$(GDB_BIN): $(GDB_DIR)/gdb
+	$(MAKE) -C $(GDB_DIR) install
 
 $(GDB_DIR)/config.cache:
-	cd $(GDB_DIR); ./configure $(COMMON_CFG_OPTS) $(GDB_CFG_OPTS)
+	cd $(GDB_DIR) && \
+	 ./configure $(COMMON_CFG_OPTS) $(GDB_CFG_OPTS)
+
+#
+# tcpdump
+#
+$(TCPDUMP_SRC):
+	wget $(LIBPCAP_URL)
+	wget $(TCPDUMP_URL)
+
+$(TCPDUMP_DIR): $(TCPDUMP_SRC)
+	tar -xzf $(TCPDUMP_SRC)
+
+$(LIBPCAP_DIR): $(LIBPCAP_SRC)
+	tar -xzf $(LIBPCAP_SRC)
+
+$(LIBPCAP_DIR)/config.cache: |$(LIBPCAP_DIR)
+	cd $(LIBPCAP_DIR) && \
+	$(TCPDUMP_MAKE_PREFIX) ./configure $(COMMON_CFG_OPTS) $(LIBPCAP_CFG_OPTS)
+
+$(TCPDUMP_DIR)/config.cache: |$(TCPDUMP_DIR) $(LIBPCAP_DIR)/libpcap.a
+	cd $(TCPDUMP_DIR) && \
+	$(TCPDUMP_MAKE_PREFIX) ./configure $(COMMON_CFG_OPTS) $(TCPDUMP_CFG_OPTS)
+
+$(LIBPCAP_DIR)/libpcap.a: $(LIBPCAP_DIR)/config.cache
+	$(MAKE) -C $(LIBPCAP_DIR)
+	$(MAKE) -C $(LIBPCAP_DIR) install
+
+$(TCPDUMP_BIN): $(TCPDUMP_DIR)/config.cache
+	$(MAKE) -C $(TCPDUMP_DIR)
+	$(MAKE) -C $(TCPDUMP_DIR) install
+
 
 #
 # Misc
@@ -70,7 +117,7 @@ print-%:
 
 clean:
 	$(MAKE) -C $(SQUID_DIR) clean
-	#$(MAKE) -C $(GDB_DIR) clean
+	$(MAKE) -C $(GDB_DIR) clean
 
 distclean: 
 	rm -rf \
